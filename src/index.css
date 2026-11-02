@@ -1,0 +1,116 @@
+/* SNEAKDEX Global Design System */
+:root {
+  --pokedex-red: #d92525;
+  --pokedex-red-dark: #a11414;
+  --pokedex-red-light: #f03a3a;
+  --pokedex-red-deep: #780d0d;
+  
+  --pokedex-blue-lens: #38bdf8;
+  --pokedex-blue-lens-glow: #0284c7;
+  --pokedex-yellow-led: #facc15;
+  --pokedex-green-led: #22c55e;
+  --pokedex-red-led: #ef4444;
+
+  --lcd-bg: #1c241e;
+  --lcd-screen: #232c25;
+  --lcd-inner: #151a17;
+  --lcd-bezel: #2b332d;
+  --lcd-border: #3b463e;
+  
+  --text-pixel-grey: #8e9a8f;
+  --text-pixel-light-grey: #a6b4a7;
+  --text-pixel-dim-grey: #69756a;
+  --text-pixel-green: #5cd65c;
+  --text-pure-white: #ffffff;
+  
+  --font-pixel: 'Press Start 2P', monospace;
+  --font-silkscreen: 'Silkscreen', monospace;
+  --font-ui: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+
+  --shadow-pokedex: 0 20px 40px -15px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.1);
+  --shadow-screen: inset 0 3px 10px rgba(0, 0, 0, 0.8), 0 2px 4px rgba(255, 255, 255, 0.1);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  background-color: #0b0f13;
+  background-image: 
+    radial-gradient(#1e293b 1px, transparent 1px),
+    radial-gradient(#1e293b 1px, #0b0f13 1px);
+  background-size: 40px 40px;
+  background-position: 0 0, 20px 20px;
+  color: #f1f5f9;
+  font-family: var(--font-ui);
+  overflow-x: hidden;
+  user-select: none;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 0;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb {
+  background: #3f4e42;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #5cd65c;
+}
+
+button {
+  font-family: inherit;
+  border: none;
+  background: none;
+  cursor: pointer;
+  outline: none;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+/* Animations */
+@keyframes pulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(56, 189, 248, 0.6), inset 0 0 8px rgba(255, 255, 255, 0.8);
+  }
+  50% {
+    box-shadow: 0 0 28px rgba(56, 189, 248, 0.95), inset 0 0 14px rgba(255, 255, 255, 0.95);
+  }
+}
+
+@keyframes scanlineAnim {
+  0% {
+    transform: translateY(-100%);
+  }
+  100% {
+    transform: translateY(1000%);
+  }
+}
+
+@keyframes blinkText {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0.3; }
+}
