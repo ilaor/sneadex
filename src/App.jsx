@@ -5,73 +5,119 @@ import SneakerDetailModal from './components/SneakerDetailModal';
 import AddSneakerModal from './components/AddSneakerModal';
 import EditSneakerModal from './components/EditSneakerModal';
 import { DEFAULT_SNEAKERS } from './data/defaultSneakers';
+import { 
+  fetchSneakersApi, 
+  addSneakerApi, 
+  updateSneakerApi, 
+  deleteSneakerApi, 
+  resetSneakersApi 
+} from './services/api';
 import './App.css';
 
-const STORAGE_KEY = 'sneakdex_collection_v1';
-
 export default function App() {
-  // Load collection from LocalStorage or initialize with defaults
-  const [sneakers, setSneakers] = useState(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
-        }
-      }
-    } catch (e) {
-      console.error('Error loading Sneakdex from storage:', e);
-    }
-    return DEFAULT_SNEAKERS;
-  });
+  const [sneakers, setSneakers] = useState(DEFAULT_SNEAKERS);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncError, setSyncError] = useState(null);
 
   // Active view states
   const [selectedSneaker, setSelectedSneaker] = useState(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingSneaker, setEditingSneaker] = useState(null);
 
-  // Sync to localStorage
+  // Fetch from Vercel KV via Serverless API on mount
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(sneakers));
-    } catch (e) {
-      console.error('Error saving to storage:', e);
+    let isMounted = true;
+    async function loadCollection() {
+      try {
+        setIsLoading(true);
+        const data = await fetchSneakersApi();
+        if (isMounted && Array.isArray(data) && data.length > 0) {
+          setSneakers(data);
+        }
+      } catch (err) {
+        console.error('Error fetching sneakers from API:', err);
+        if (isMounted) {
+          setSyncError('MODO SIN CONEXIÓN O KV NO DISPONIBLE');
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
     }
-  }, [sneakers]);
+    loadCollection();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Add new sneaker
-  const handleAddSneaker = (newSneaker) => {
-    const updated = [newSneaker, ...sneakers];
-    setSneakers(updated);
-    // Optionally open the newly registered sneaker in detail view
-    setSelectedSneaker(newSneaker);
+  const handleAddSneaker = async (newSneaker) => {
+    try {
+      setIsSyncing(true);
+      // Optimistic update
+      setSneakers((prev) => [newSneaker, ...prev]);
+      setSelectedSneaker(newSneaker);
+      // Persist to Vercel KV
+      await addSneakerApi(newSneaker);
+    } catch (err) {
+      console.error('Failed to add sneaker via API:', err);
+      setSyncError('ERROR AL GUARDAR EN VERCEL KV');
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   // Update existing sneaker
-  const handleUpdateSneaker = (updatedSneaker) => {
-    const updated = sneakers.map((s) => 
-      s.id === updatedSneaker.id ? updatedSneaker : s
-    );
-    setSneakers(updated);
-    if (selectedSneaker && selectedSneaker.id === updatedSneaker.id) {
-      setSelectedSneaker(updatedSneaker);
+  const handleUpdateSneaker = async (updatedSneaker) => {
+    try {
+      setIsSyncing(true);
+      setSneakers((prev) =>
+        prev.map((s) => (s.id === updatedSneaker.id ? updatedSneaker : s))
+      );
+      if (selectedSneaker && selectedSneaker.id === updatedSneaker.id) {
+        setSelectedSneaker(updatedSneaker);
+      }
+      await updateSneakerApi(updatedSneaker);
+    } catch (err) {
+      console.error('Failed to update sneaker via API:', err);
+      setSyncError('ERROR AL ACTUALIZAR EN VERCEL KV');
+    } finally {
+      setIsSyncing(false);
     }
   };
 
   // Delete sneaker
-  const handleDeleteSneaker = (id) => {
-    const updated = sneakers.filter((s) => s.id !== id);
-    setSneakers(updated);
-    if (selectedSneaker && selectedSneaker.id === id) {
-      setSelectedSneaker(null);
+  const handleDeleteSneaker = async (id) => {
+    try {
+      setIsSyncing(true);
+      setSneakers((prev) => prev.filter((s) => s.id !== id));
+      if (selectedSneaker && selectedSneaker.id === id) {
+        setSelectedSneaker(null);
+      }
+      await deleteSneakerApi(id);
+    } catch (err) {
+      console.error('Failed to delete sneaker via API:', err);
+      setSyncError('ERROR AL ELIMINAR EN VERCEL KV');
+    } finally {
+      setIsSyncing(false);
     }
   };
 
   // Reset collection to starter Pokémon sneakers
-  const handleResetCollection = () => {
-    setSneakers(DEFAULT_SNEAKERS);
-    setSelectedSneaker(null);
+  const handleResetCollection = async () => {
+    try {
+      setIsSyncing(true);
+      const res = await resetSneakersApi();
+      setSneakers(res || DEFAULT_SNEAKERS);
+      setSelectedSneaker(null);
+    } catch (err) {
+      console.error('Failed to reset collection via API:', err);
+      setSneakers(DEFAULT_SNEAKERS);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   // Compute next Pokédex number e.g. #007
@@ -86,8 +132,15 @@ export default function App() {
         onOpenAdd={() => setIsAddModalOpen(true)}
         onResetCollection={handleResetCollection}
         totalSneakers={sneakers.length}
+        isSyncing={isSyncing}
       >
-        {selectedSneaker ? (
+        {isLoading ? (
+          <div className="pokedex-loading-screen">
+            <div className="loading-pokeball-spinner"></div>
+            <p className="loading-pixel-text">CONECTANDO A VERCEL KV...</p>
+            <p className="loading-sub-text">SINCRONIZANDO SNEAKDEX</p>
+          </div>
+        ) : selectedSneaker ? (
           <SneakerDetailModal
             sneaker={selectedSneaker}
             onClose={() => setSelectedSneaker(null)}

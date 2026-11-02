@@ -1,80 +1,89 @@
-# 👟 SNEAKDEX - Sneaker Collection Pokédex
+# 👟 SNEAKDEX - Sneaker Collection Pokédex (Vercel Native)
 
-Aplicación web interactiva para coleccionismo de zapatillas inspirada fielmente en la **Pokédex de Pokémon**, diseñada para su despliegue inmediato en **Vercel** y optimizada para dispositivos móviles.
+Aplicación web interactiva para coleccionismo de zapatillas inspirada fielmente en la **Pokédex de Pokémon**, con almacenamiento en la nube en el ecosistema nativo de **Vercel** (`@vercel/blob` + `@vercel/kv`), Serverless Functions y optimizada para dispositivos móviles.
 
 ![Sneakdex Preview](public/favicon.svg)
 
 ---
 
-## ⚡ Características Principales
+## ⚡ Arquitectura Vercel Native
 
-1. **Diseño Pokédex Auténtico**:
-   - Chasis exterior rojo con lente de escaneo azul brillante y reflectante con pulsación luminosa.
-   - Trío de luces LED indicadoras (rojo, amarillo, verde).
-   - Encabezado centrado con el nombre **SNEAKDEX** en tipografía Pixel Art (`Press Start 2P`).
-   - Pantalla LCD retro iluminada con efecto sutil de líneas de escaneo (scanlines).
-   - Botón central tipo **Pokéball** táctil para registrar nuevos pares de zapatillas.
-   - Sonidos 8-bit sintetizados en tiempo real mediante **Web Audio API** (sin dependencias ni descargas de audio externas, con botón de silenciado).
+- **Imágenes (`@vercel/blob`)**: Almacenamiento seguro de fotos en CDN global. Las imágenes no se guardan en el cliente ni consumen la cuota de `localStorage`.
+- **Datos de Colección (`@vercel/kv`)**: Almacén clave-valor ultrarrápido (Upstash / Redis) que persiste el nombre, número, descripción, marca, talla y URLs de las fotos de cada zapatilla en la nube.
+- **Serverless Functions (`/api`)**: Endpoints seguros en Node.js que manejan el CRUD y las subidas a Blob sin exponer ningún token o credencial sensible en el cliente.
+- **Fallback local inteligente**: El servidor de desarrollo incluye un middleware en `vite.config.js` que emula los endpoints `/api` durante el desarrollo local (`npm run dev`), garantizando que la aplicación funcione siempre.
 
-2. **Rejilla de Zapatillas (2 Columnas x 2.5 Filas)**:
-   - Vista principal estructurada estrictamente en **dos columnas**.
-   - Altura de la ventana calculada para mostrar exactamente **2 filas completas y la mitad de la 3ª fila (2.5 filas)**, insinuando visualmente al usuario el desplazamiento vertical suave.
-   - Miniaturas con número de entrada de catálogo Pokédex (`#001`, `#002`...), etiqueta de categoría/tipo y distintivo de fotos múltiples.
+---
 
-3. **Vista de Detalle con Carrusel y Tipografía Pixel Art**:
-   - Al pulsar cualquier zapatilla, se abre la interfaz de ficha técnica.
-   - **Imagen central** nítida enmarcada en el visor LCD.
-   - Botones direccionales **`<` y `>` a los lados de la imagen** para navegar cómodamente entre todas las fotos registradas de ese par.
-   - Soporte para deslizamiento táctil (swipe en móviles) y flechas del teclado (izquierda/derecha).
-   - **Nombre de la zapatilla centrado**.
-   - **Pequeña descripción centrada en tipografía pixel art de color gris**, tal como fue especificado.
-   - Contador de imágenes `FOTO X / Y`, botones de edición y eliminación.
+## 🔑 Variables de Entorno en Vercel
 
-4. **Registro y Alta de Nuevas Zapatillas ("Dar de alta")**:
-   - Formulario emergente con estética de terminal Pokédex.
-   - Subida de **múltiples fotos** directamente desde la cámara o galería del teléfono (convertidas automáticamente a base64 DataURL).
-   - Opción para añadir imágenes pegando URLs web.
-   - Vista previa en miniatura con botón para descartar imágenes individuales.
-   - Campos para Nombre, N° Pokédex, Tipo/Categoría (Basketball, Skate, Runner, Classic, Heritage, Tech, Grail, Custom), Descripción en pixel art, Marca, Talla, Colorway y Estado (Deadstock, VNDS, Usado, etc.).
-   - Animación de confeti de celebración y fanfarria 8-bit al registrar.
+Al desplegar tu proyecto en Vercel o vincular los stores desde la pestaña **Storage** de tu panel de Vercel, debes configurar estas variables:
 
-5. **Persistencia Total**:
-   - Todos los datos y fotos se guardan en el `localStorage` del navegador. Tus zapatillas permanecen guardadas entre visitas y reinicios.
-   - Opción de restaurar la colección por defecto con los 6 modelos iniciales emblemáticos (Air Jordan 1 Chicago, Travis Scott SB Dunk, Yeezy Boost 350 Zebra, New Balance 990v3, Air Max 1 Big Bubble, Asics Gel-Kayano 14).
+| Variable | Descripción | Dónde se obtiene |
+| :--- | :--- | :--- |
+| `BLOB_READ_WRITE_TOKEN` | Token con permisos de lectura y escritura para subir imágenes a Vercel Blob. | En tu proyecto Vercel > **Storage** > **Create Database** > **Blob**. Se inyecta automáticamente al pulsar *Connect to Project*. |
+| `KV_REST_API_URL` | URL de conexión REST para la base de datos KV (Upstash Redis). | En tu proyecto Vercel > **Storage** > **Create Database** > **KV**. Se inyecta automáticamente al conectar. |
+| `KV_REST_API_TOKEN` | Token de autenticación REST para Vercel KV. | En tu proyecto Vercel > **Storage** > **KV** > pestaña *.env*. Se inyecta automáticamente. |
+| `KV_REST_API_READ_ONLY_TOKEN` *(Opcional)* | Token de solo lectura generado por Vercel KV. | Generado automáticamente por Vercel KV. |
+| `KV_URL` *(Opcional)* | Cadena de conexión `redis://...` completa. | Generado automáticamente por Vercel KV. |
+
+> 💡 **Nota rápida**: Si creas los almacenes **KV** y **Blob** directamente desde la sección **Storage** del panel de control de tu proyecto en Vercel, Vercel **inyecta automáticamente todas estas variables** en tu entorno sin que tengas que copiarlas manualmente.
+
+Para desarrollo local, puedes crear un archivo `.env.local` en la raíz con tus claves o ejecutar `npx vercel env pull .env.local`.
+
+---
+
+## 🛠️ Comandos de Instalación y Ejecución
+
+```bash
+# 1. Instalar dependencias del proyecto (incluye @vercel/blob y @vercel/kv)
+npm install
+
+# 2. Iniciar servidor de desarrollo local
+npm run dev
+
+# 3. Compilar bundle de producción
+npm run build
+```
 
 ---
 
 ## 🚀 Despliegue en Vercel
 
-La aplicación está 100% preparada para Vercel:
-
 ### Opción 1: Conectar repositorio GitHub a Vercel (Recomendado)
 1. Sube tu código a GitHub:
    ```bash
    git add .
-   git commit -m "feat: complete Sneakdex web app"
+   git commit -m "feat: migrate to @vercel/blob and @vercel/kv"
    git push origin main
    ```
-2. Entra en [vercel.com](https://vercel.com/) y pulsa **"Add New Project"**.
-3. Selecciona tu repositorio `sneadex`. Vercel detectará automáticamente la configuración Vite y `vercel.json`.
-4. Pulsa **"Deploy"**. En 30 segundos tu app estará en línea con dominio `.vercel.app`.
+2. Entra en [vercel.com](https://vercel.com/) y haz clic en **"Add New Project"**.
+3. Selecciona el repositorio `sneadex`. Vercel detectará la configuración Vite y las funciones `/api` automáticamente.
+4. En el panel de tu proyecto en Vercel, ve a **Storage**:
+   - Pulsa **Create Database** -> Selecciona **KV** -> Pulsa **Connect to Project**.
+   - Pulsa **Create Database** -> Selecciona **Blob** -> Pulsa **Connect to Project**.
+5. ¡Listo! Tu Sneakdex guardará fotos y datos en tiempo real en la nube.
 
 ### Opción 2: Despliegue directo mediante Vercel CLI
 ```bash
+# Vincular y desplegar
 npx vercel
+
+# Vincular los stores de storage
+npx vercel link
+npx vercel env pull .env.local
 ```
 
 ---
 
-## 🛠️ Ejecución Local
+## 📱 Características de la Interfaz
 
-```bash
-# Instalar dependencias
-npm install
-
-# Iniciar servidor de desarrollo
-npm run dev
-
-# Generar bundle de producción
-npm run build
-```
+1. **Header centrado**: La palabra **SNEAKDEX** en tipografía Pixel Art (`Press Start 2P`) con luces LED indicadoras de sincronización (`KV SYNC`).
+2. **Rejilla 2 columnas x 2.5 filas**: Visor de altura calculada mostrando 2 filas completas y la mitad superior de la 3ª fila.
+3. **Ficha de detalle**:
+   - Imagen central con botones direccionales **`<` y `>` a los lados** para navegar entre todas las fotos del par.
+   - **Nombre de la zapatilla centrado**.
+   - **Pequeña descripción centrada en tipografía pixel art de color gris**.
+4. **Alta de zapatillas**:
+   - Botón superior `+` y botón inferior central tipo **Pokéball**.
+   - Subida de múltiples fotos directamente a **Vercel Blob Storage**.

@@ -6,7 +6,8 @@ export default function PokedexShell({
   children, 
   onOpenAdd, 
   onResetCollection,
-  totalSneakers 
+  totalSneakers,
+  isSyncing = false
 }) {
   const [soundOn, setSoundOn] = useState(isSoundEnabled());
   const [showOptions, setShowOptions] = useState(false);
@@ -29,13 +30,27 @@ export default function PokedexShell({
           {/* Trio of Mini Signal LEDs */}
           <div className="pokedex-led-trio">
             <span className="pokedex-led red"></span>
-            <span className="pokedex-led yellow"></span>
+            <span className={`pokedex-led yellow ${isSyncing ? 'pulse-led' : ''}`} title={isSyncing ? 'Sincronizando con Vercel' : 'En línea'}></span>
             <span className="pokedex-led green"></span>
           </div>
         </div>
 
-        {/* Audio Mute & Menu Options */}
+        {/* Audio Mute, Add & Menu Options */}
         <div className="pokedex-top-actions">
+          {isSyncing && (
+            <span className="pokedex-sync-badge-pixel">KV SYNC</span>
+          )}
+          <button 
+            className="pokedex-icon-btn add-btn-top"
+            onClick={() => {
+              playPokedexBeep(800, 0.08);
+              onOpenAdd();
+            }}
+            title="Registrar nueva zapatilla"
+            aria-label="Registrar zapatilla"
+          >
+            <Plus size={16} />
+          </button>
           <button 
             className="pokedex-icon-btn"
             onClick={handleToggleSound}

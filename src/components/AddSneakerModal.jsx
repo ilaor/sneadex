@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import confetti from 'canvas-confetti';
 import { playCatchSuccess, playPokedexBeep } from '../utils/audio';
+import { uploadImageToBlobApi } from '../services/api';
 
 const SNEAKER_TYPES = [
   'BASKETBALL',
@@ -27,10 +28,11 @@ export default function AddSneakerModal({
   const [condition, setCondition] = useState('Deadstock (DS)');
   const [description, setDescription] = useState('');
   
-  // Images list
+  // Images list (can contain local { filename, dataUrl } or direct URLs)
   const [images, setImages] = useState([]);
   const [imageUrlInput, setImageUrlInput] = useState('');
-  const [isProcessingFiles, setIsProcessingFiles] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
   // Handle local file uploads (Camera or Photos)
@@ -38,24 +40,26 @@ export default function AddSneakerModal({
     const files = Array.from(e.target.files);
     if (!files.length) return;
 
-    setIsProcessingFiles(true);
     let loadedCount = 0;
-    const newImages = [...images];
+    const newItems = [...images];
 
     files.forEach((file) => {
       const reader = new FileReader();
       reader.onload = (event) => {
-        newImages.push(event.target.result);
+        newItems.push({
+          isLocal: true,
+          filename: file.name,
+          contentType: file.type || 'image/jpeg',
+          dataUrl: event.target.result
+        });
         loadedCount++;
         if (loadedCount === files.length) {
-          setImages(newImages);
-          setIsProcessingFiles(false);
+          setImages(newItems);
           playPokedexBeep(750, 0.05);
         }
       };
       reader.onerror = () => {
         loadedCount++;
-        if (loadedCount === files.length) setIsProcessingFiles(false);
       };
       reader.readAsDataURL(file);
     });
@@ -65,7 +69,14 @@ export default function AddSneakerModal({
   const handleAddImageUrl = (e) => {
     e.preventDefault();
     if (!imageUrlInput.trim()) return;
-    setImages([...images, imageUrlInput.trim()]);
+    setImages([
+      ...images,
+      {
+        isLocal: false,
+        dataUrl: imageUrlInput.trim(),
+        filename: 'external.jpg'
+      }
+    ]);
     setImageUrlInput('');
     playPokedexBeep(700, 0.04);
   };
@@ -76,8 +87,8 @@ export default function AddSneakerModal({
     setImages(images.filter((_, idx) => idx !== indexToRemove));
   };
 
-  // Form submit
-  const handleSubmit = (e) => {
+  // Form submit with upload to @vercel/blob
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!name.trim()) {
       setErrorMsg('INDICA EL NOMBRE DE LA ZAPATILLA');
@@ -85,38 +96,71 @@ export default function AddSneakerModal({
       return;
     }
 
-    // Default fallback image if none provided
-    const finalImages = images.length > 0 
-      ? images 
-      : ['https://images.unsplash.com/photo-1552346154-21d32810aba3?auto=format&fit=crop&w=800&q=80'];
+    setIsUploading(true);
+    setErrorMsg('');
 
-    const newSneaker = {
-      id: `snk-${Date.now()}`,
-      number: number.trim().startsWith('#') ? number.trim() : `#${number.trim()}`,
-      name: name.trim().toUpperCase(),
-      description: description.trim().toUpperCase() || 'DATOS REGISTRADOS POR EL COLECCIONISTA EN LA SNEAKDEX.',
-      type,
-      brand: brand.trim() || 'Custom',
-      colorway: colorway.trim() || 'OG Colorway',
-      size: size.trim() || 'US 10',
-      condition,
-      images: finalImages
-    };
-
-    onAdd(newSneaker);
-    playCatchSuccess();
-
-    // Celebratory Pokédex confetti
     try {
-      confetti({
-        particleCount: 50,
-        spread: 60,
-        origin: { y: 0.7 },
-        colors: ['#e63946', '#facc15', '#38bdf8', '#22c55e']
-      });
-    } catch (err) {}
+      const finalImageUrls = [];
 
-    onClose();
+      // If no images attached, provide a default fallback
+      if (images.length === 0) {
+        finalImageUrls.push(
+          'https://images.unsplash.com/photo-1552346154-21d32810aba3?auto=format&fit=crop&w=800&q=80'
+        );
+      } else {
+        for (let i = 0; i < images.length; i++) {
+          const item = images[i];
+          if (item.isLocal && item.dataUrl.startsWith('data:image/')) {
+            setUploadStatus(`SUBIENDO FOTO ${i + 1}/${images.length} A VERCEL BLOB...`);
+            const blobUrl = await uploadImageToBlobApi(
+              item.filename || `sneaker-${i + 1}.jpg`,
+              item.dataUrl,
+              item.contentType
+            );
+            finalImageUrls.push(blobUrl);
+          } else {
+            // Already a remote URL
+            finalImageUrls.push(item.dataUrl);
+          }
+        }
+      }
+
+      const newSneaker = {
+        id: `snk-${Date.now()}`,
+        number: number.trim().startsWith('#') ? number.trim() : `#${number.trim()}`,
+        name: name.trim().toUpperCase(),
+        description: description.trim().toUpperCase() || 'DATOS REGISTRADOS POR EL COLECCIONISTA EN LA SNEAKDEX.',
+        type,
+        brand: brand.trim() || 'Custom',
+        colorway: colorway.trim() || 'OG Colorway',
+        size: size.trim() || 'US 10',
+        condition,
+        images: finalImageUrls
+      };
+
+      setUploadStatus('GUARDANDO EN VERCEL KV...');
+      await onAdd(newSneaker);
+      playCatchSuccess();
+
+      // Celebratory Pokédex confetti
+      try {
+        confetti({
+          particleCount: 50,
+          spread: 60,
+          origin: { y: 0.7 },
+          colors: ['#e63946', '#facc15', '#38bdf8', '#22c55e']
+        });
+      } catch (err) {}
+
+      onClose();
+    } catch (err) {
+      console.error('Submit error:', err);
+      setErrorMsg(err.message || 'Error al subir a Vercel Blob / KV');
+      playPokedexBeep(200, 0.15);
+    } finally {
+      setIsUploading(false);
+      setUploadStatus('');
+    }
   };
 
   return (
@@ -137,6 +181,7 @@ export default function AddSneakerModal({
           <h3 className="modal-title-pixel">REGISTRAR ZAPATILLA</h3>
           <button 
             className="modal-close-btn" 
+            disabled={isUploading}
             onClick={() => {
               playPokedexBeep(400, 0.05);
               onClose();
@@ -152,6 +197,13 @@ export default function AddSneakerModal({
           </div>
         )}
 
+        {isUploading && (
+          <div className="modal-uploading-banner">
+            <span className="upload-spinner-pixel">⚡</span>
+            <span>{uploadStatus}</span>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="modal-form-body">
           {/* Row 1: Number & Type */}
           <div className="form-row-duo">
@@ -163,6 +215,7 @@ export default function AddSneakerModal({
                 onChange={(e) => setNumber(e.target.value)}
                 className="pixel-input"
                 placeholder="#007"
+                disabled={isUploading}
               />
             </div>
             <div className="form-group">
@@ -171,6 +224,7 @@ export default function AddSneakerModal({
                 value={type}
                 onChange={(e) => setType(e.target.value)}
                 className="pixel-select"
+                disabled={isUploading}
               >
                 {SNEAKER_TYPES.map((t) => (
                   <option key={t} value={t}>{t}</option>
@@ -192,21 +246,22 @@ export default function AddSneakerModal({
               placeholder="Ej: AIR JORDAN 4 RETRO BRED"
               className="pixel-input"
               required
+              disabled={isUploading}
             />
           </div>
 
-          {/* Images Section */}
+          {/* Images Section with Vercel Blob support */}
           <div className="form-group images-uploader-section">
             <label className="pixel-label">
-              IMÁGENES ({images.length} AÑADIDAS)
+              IMÁGENES ({images.length} AÑADIDAS) → VERCEL BLOB
             </label>
             <div className="uploader-help-pixel">
-              Puedes subir múltiples fotos de tu par (frontal, lateral, suela...)
+              Las fotos se alojarán de forma segura en Vercel Blob Storage.
             </div>
 
             {/* Buttons to upload file or paste URL */}
             <div className="upload-actions-bar">
-              <label className="pixel-file-btn">
+              <label className={`pixel-file-btn ${isUploading ? 'disabled' : ''}`}>
                 <span>📁 SUBIR FOTOS (CÁMARA / GALERÍA)</span>
                 <input 
                   type="file" 
@@ -214,6 +269,7 @@ export default function AddSneakerModal({
                   accept="image/*"
                   onChange={handleFileUpload}
                   style={{ display: 'none' }}
+                  disabled={isUploading}
                 />
               </label>
             </div>
@@ -226,34 +282,34 @@ export default function AddSneakerModal({
                 onChange={(e) => setImageUrlInput(e.target.value)}
                 placeholder="O pega URL de imagen..."
                 className="pixel-input url-input"
+                disabled={isUploading}
               />
               <button 
                 type="button"
                 onClick={handleAddImageUrl}
                 className="pixel-btn-action-small"
+                disabled={isUploading}
               >
                 + URL
               </button>
             </div>
 
-            {isProcessingFiles && (
-              <div className="pixel-loading-bar">PROCESANDO IMAGENES...</div>
-            )}
-
             {/* Preview Grid of Uploaded Images */}
             {images.length > 0 && (
               <div className="images-preview-strip">
-                {images.map((imgUrl, idx) => (
+                {images.map((item, idx) => (
                   <div key={idx} className="preview-thumb-box">
-                    <img src={imgUrl} alt={`Foto ${idx + 1}`} />
-                    <button 
-                      type="button"
-                      className="preview-remove-btn"
-                      onClick={() => handleRemoveImage(idx)}
-                      title="Eliminar foto"
-                    >
-                      ✕
-                    </button>
+                    <img src={item.dataUrl} alt={`Foto ${idx + 1}`} />
+                    {!isUploading && (
+                      <button 
+                        type="button"
+                        className="preview-remove-btn"
+                        onClick={() => handleRemoveImage(idx)}
+                        title="Eliminar foto"
+                      >
+                        ✕
+                      </button>
+                    )}
                     <span className="preview-idx-badge">{idx + 1}</span>
                   </div>
                 ))}
@@ -270,6 +326,7 @@ export default function AddSneakerModal({
               placeholder="Historia, detalles, materiales o recuerdos de este par..."
               className="pixel-textarea"
               rows={3}
+              disabled={isUploading}
             />
           </div>
 
@@ -283,6 +340,7 @@ export default function AddSneakerModal({
                 onChange={(e) => setBrand(e.target.value)}
                 placeholder="Nike, adidas, Jordan..."
                 className="pixel-input"
+                disabled={isUploading}
               />
             </div>
             <div className="form-group">
@@ -293,6 +351,7 @@ export default function AddSneakerModal({
                 onChange={(e) => setSize(e.target.value)}
                 placeholder="US 10 / EU 44"
                 className="pixel-input"
+                disabled={isUploading}
               />
             </div>
           </div>
@@ -306,6 +365,7 @@ export default function AddSneakerModal({
                 onChange={(e) => setColorway(e.target.value)}
                 placeholder="Black / Cement Grey"
                 className="pixel-input"
+                disabled={isUploading}
               />
             </div>
             <div className="form-group">
@@ -314,6 +374,7 @@ export default function AddSneakerModal({
                 value={condition}
                 onChange={(e) => setCondition(e.target.value)}
                 className="pixel-select"
+                disabled={isUploading}
               >
                 <option value="Deadstock (DS)">Deadstock (DS) - A estrenar</option>
                 <option value="VNDS (Near Mint)">VNDS - Como nuevo</option>
@@ -329,8 +390,9 @@ export default function AddSneakerModal({
             <button 
               type="submit" 
               className="pixel-submit-btn"
+              disabled={isUploading}
             >
-              ★ REGISTRAR EN SNEAKDEX ★
+              {isUploading ? '⚡ SINCRONIZANDO CON VERCEL...' : '★ REGISTRAR EN SNEAKDEX ★'}
             </button>
           </div>
         </form>
