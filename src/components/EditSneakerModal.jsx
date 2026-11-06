@@ -1,16 +1,6 @@
 import React, { useState } from 'react';
 import { uploadImageToBlobApi } from '../services/api';
-
-const SNEAKER_TYPES = [
-  'BASKETBALL',
-  'SKATE',
-  'RUNNER',
-  'CLASSIC',
-  'HERITAGE',
-  'TECH',
-  'GRAIL',
-  'CUSTOM'
-];
+import { getBrandTypeNumber } from '../utils/brandType';
 
 export default function EditSneakerModal({ 
   sneaker, 
@@ -18,7 +8,6 @@ export default function EditSneakerModal({
   onUpdate 
 }) {
   const [name, setName] = useState(sneaker.name || '');
-  const [type, setType] = useState(sneaker.type || 'BASKETBALL');
   const [brand, setBrand] = useState(sneaker.brand || '');
   const [size, setSize] = useState(sneaker.size || '');
   const [description, setDescription] = useState(sneaker.description || '');
@@ -134,12 +123,13 @@ export default function EditSneakerModal({
         }
       }
 
+      const brandName = brand.trim() || 'Custom';
       const updatedSneaker = {
         ...sneaker,
         name: name.trim().toUpperCase(),
         description: description.trim().toUpperCase() || '',
-        type,
-        brand: brand.trim() || 'Custom',
+        brand: brandName,
+        typeIcon: getBrandTypeNumber(brandName),
         size: size.trim() || '',
         images: finalImageUrls
       };
@@ -302,20 +292,6 @@ export default function EditSneakerModal({
               required
               disabled={isUploading}
             />
-          </div>
-
-          <div className="yzy-form-field">
-            <label className="yzy-label">TIPO / CATEGORÍA</label>
-            <select 
-              value={type}
-              onChange={(e) => setType(e.target.value)}
-              className="yzy-select"
-              disabled={isUploading}
-            >
-              {SNEAKER_TYPES.map((t) => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
           </div>
 
           <div className="yzy-form-field">

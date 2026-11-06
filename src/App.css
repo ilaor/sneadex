@@ -449,13 +449,37 @@
   line-height: 1.25;
 }
 
-/* Bajo: el tipo de la zapatilla */
-.yzy-sneaker-type {
+/* Marca de la zapatilla con icono pequeño */
+.yzy-sneaker-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #525252;
+  letter-spacing: 0.8px;
+  margin-bottom: 4px;
+}
+
+.yzy-brand-badge-icon {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  flex-shrink: 0;
+}
+
+/* Talla visible */
+.yzy-sneaker-size {
   font-size: 11px;
   font-weight: 500;
   text-transform: uppercase;
-  color: #737373;
-  letter-spacing: 0.8px;
+  color: #171717;
+  letter-spacing: 0.6px;
   margin-bottom: 10px;
 }
 

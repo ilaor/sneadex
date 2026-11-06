@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { getBrandTypeIcon } from '../utils/brandType';
 
 // Extract two words for the name, strictly matching the YZY minimalist convention
 function formatTwoWords(name) {
@@ -22,6 +23,7 @@ export default function YZYSneakerDetail({
   const totalImages = images.length;
   const currentPhoto = images[photoIndex] || images[0];
   const twoWordName = formatTwoWords(sneaker.name);
+  const brandIcon = getBrandTypeIcon(sneaker.brand, sneaker.typeIcon);
 
   const handlePrev = (e) => {
     if (e) e.stopPropagation();
@@ -115,10 +117,27 @@ export default function YZYSneakerDetail({
           {twoWordName}
         </h2>
 
-        {/* Bajo: el tipo de la zapatilla */}
-        <div className="yzy-sneaker-type">
-          {sneaker.type || 'SNEAKER'}
-        </div>
+        {/* Marca en la línea de tipo con icono indicador */}
+        {sneaker.brand && (
+          <div className="yzy-sneaker-brand">
+            {brandIcon && (
+              <img 
+                src={brandIcon} 
+                alt="Tipo" 
+                className="yzy-brand-badge-icon" 
+                title={`Elemento asignado a ${sneaker.brand}`}
+              />
+            )}
+            <span>{sneaker.brand}</span>
+          </div>
+        )}
+
+        {/* Talla visible adaptada al estilo minimalista */}
+        {sneaker.size && (
+          <div className="yzy-sneaker-size">
+            TALLA {sneaker.size}
+          </div>
+        )}
 
         {/* Bajo: centrada la descripción */}
         <p className="yzy-sneaker-description">
