@@ -1,6 +1,4 @@
-import React, { useState } from 'react';
-import confetti from 'canvas-confetti';
-import { playCatchSuccess, playPokedexBeep } from '../utils/audio';
+import React, { useState, useRef, useEffect } from 'react';
 import { uploadImageToBlobApi } from '../services/api';
 
 const SNEAKER_TYPES = [
@@ -19,23 +17,144 @@ export default function AddSneakerModal({
   onAdd, 
   nextNumber 
 }) {
+  // Step: 'camera' by default, then 'form'
+  const [step, setStep] = useState('camera');
+  
+  // Camera state
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
+  const [cameraError, setCameraError] = useState(false);
+  const [flash, setFlash] = useState(false);
+
+  // Form fields
   const [name, setName] = useState('');
-  const [number, setNumber] = useState(nextNumber || '#001');
   const [type, setType] = useState('BASKETBALL');
   const [brand, setBrand] = useState('');
-  const [colorway, setColorway] = useState('');
   const [size, setSize] = useState('');
-  const [condition, setCondition] = useState('Deadstock (DS)');
   const [description, setDescription] = useState('');
   
-  // Images list (can contain local { filename, dataUrl } or direct URLs)
+  // Images list: array of { isLocal, dataUrl, filename, contentType }
   const [images, setImages] = useState([]);
   const [imageUrlInput, setImageUrlInput] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Handle local file uploads (Camera or Photos)
+  // Open camera when on 'camera' step
+  useEffect(() => {
+    let activeStream = null;
+    let isCancelled = false;
+
+    if (step === 'camera') {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        navigator.mediaDevices?.enumerateDevices?.();
+        return;
+      }
+
+      navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280 },
+          height: { ideal: 1280 }
+        },
+        audio: false
+      })
+      .then((stream) => {
+        if (isCancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        activeStream = stream;
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+      })
+      .catch((err) => {
+        if (!isCancelled) {
+          console.warn('Unable to access device camera:', err);
+          setCameraError(true);
+        }
+      });
+    }
+
+    return () => {
+      isCancelled = true;
+      if (activeStream) {
+        activeStream.getTracks().forEach((track) => track.stop());
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+      }
+    };
+  }, [step]);
+
+  // Capture photo from video stream without closing camera
+  const handleCapturePhoto = () => {
+    if (!videoRef.current) return;
+    const video = videoRef.current;
+
+    const width = video.videoWidth || 1080;
+    const height = video.videoHeight || 1080;
+
+    let canvas = canvasRef.current;
+    if (!canvas) {
+      canvas = document.createElement('canvas');
+      canvasRef.current = canvas;
+    }
+    canvas.width = width;
+    canvas.height = height;
+
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, width, height);
+
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+
+    // Shutter flash animation
+    setFlash(true);
+    setTimeout(() => setFlash(false), 180);
+
+    // Add captured photo to collection immediately
+    setImages((prev) => [
+      ...prev,
+      {
+        isLocal: true,
+        dataUrl,
+        filename: `sneaker-${Date.now()}-${prev.length + 1}.jpg`,
+        contentType: 'image/jpeg'
+      }
+    ]);
+  };
+
+  // Reorder photos: move from index to index
+  const moveImage = (fromIdx, toIdx) => {
+    if (toIdx < 0 || toIdx >= images.length) return;
+    setImages((prev) => {
+      const copy = [...prev];
+      const [moved] = copy.splice(fromIdx, 1);
+      copy.splice(toIdx, 0, moved);
+      return copy;
+    });
+  };
+
+  // Make a photo the first (cover photo for main screen)
+  const makeCover = (idx) => {
+    if (idx === 0) return;
+    setImages((prev) => {
+      const copy = [...prev];
+      const [selected] = copy.splice(idx, 1);
+      return [selected, ...copy];
+    });
+  };
+
+  // Remove an image from the list
+  const handleRemoveImage = (indexToRemove) => {
+    setImages(images.filter((_, idx) => idx !== indexToRemove));
+  };
+
+  // Handle local file uploads (Camera or Photos from gallery)
   const handleFileUpload = (e) => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
@@ -55,7 +174,6 @@ export default function AddSneakerModal({
         loadedCount++;
         if (loadedCount === files.length) {
           setImages(newItems);
-          playPokedexBeep(750, 0.05);
         }
       };
       reader.onerror = () => {
@@ -78,13 +196,6 @@ export default function AddSneakerModal({
       }
     ]);
     setImageUrlInput('');
-    playPokedexBeep(700, 0.04);
-  };
-
-  // Remove an image from the list
-  const handleRemoveImage = (indexToRemove) => {
-    playPokedexBeep(350, 0.04);
-    setImages(images.filter((_, idx) => idx !== indexToRemove));
   };
 
   // Form submit with upload to @vercel/blob
@@ -92,7 +203,6 @@ export default function AddSneakerModal({
     e.preventDefault();
     if (!name.trim()) {
       setErrorMsg('INDICA EL NOMBRE DE LA ZAPATILLA');
-      playPokedexBeep(250, 0.1);
       return;
     }
 
@@ -102,7 +212,6 @@ export default function AddSneakerModal({
     try {
       const finalImageUrls = [];
 
-      // If no images attached, provide a default fallback
       if (images.length === 0) {
         finalImageUrls.push(
           'https://images.unsplash.com/photo-1552346154-21d32810aba3?auto=format&fit=crop&w=800&q=80'
@@ -111,7 +220,7 @@ export default function AddSneakerModal({
         for (let i = 0; i < images.length; i++) {
           const item = images[i];
           if (item.isLocal && item.dataUrl.startsWith('data:image/')) {
-            setUploadStatus(`SUBIENDO FOTO ${i + 1}/${images.length} A VERCEL BLOB...`);
+            setUploadStatus(`SUBIENDO FOTO ${i + 1}/${images.length}...`);
             const blobUrl = await uploadImageToBlobApi(
               item.filename || `sneaker-${i + 1}.jpg`,
               item.dataUrl,
@@ -119,7 +228,6 @@ export default function AddSneakerModal({
             );
             finalImageUrls.push(blobUrl);
           } else {
-            // Already a remote URL
             finalImageUrls.push(item.dataUrl);
           }
         }
@@ -127,36 +235,23 @@ export default function AddSneakerModal({
 
       const newSneaker = {
         id: `snk-${Date.now()}`,
-        number: number.trim().startsWith('#') ? number.trim() : `#${number.trim()}`,
+        number: nextNumber || '#001',
         name: name.trim().toUpperCase(),
-        description: description.trim().toUpperCase() || 'DATOS REGISTRADOS POR EL COLECCIONISTA EN LA SNEAKDEX.',
+        description: description.trim().toUpperCase() || '',
         type,
         brand: brand.trim() || 'Custom',
-        colorway: colorway.trim() || 'OG Colorway',
-        size: size.trim() || 'US 10',
-        condition,
+        colorway: '',
+        size: size.trim() || '',
+        condition: 'Deadstock (DS)',
         images: finalImageUrls
       };
 
-      setUploadStatus('GUARDANDO EN VERCEL KV...');
+      setUploadStatus('GUARDANDO...');
       await onAdd(newSneaker);
-      playCatchSuccess();
-
-      // Celebratory Pokédex confetti
-      try {
-        confetti({
-          particleCount: 50,
-          spread: 60,
-          origin: { y: 0.7 },
-          colors: ['#e63946', '#facc15', '#38bdf8', '#22c55e']
-        });
-      } catch (err) {}
-
       onClose();
     } catch (err) {
       console.error('Submit error:', err);
-      setErrorMsg(err.message || 'Error al subir a Vercel Blob / KV');
-      playPokedexBeep(200, 0.15);
+      setErrorMsg(err.message || 'Error al guardar');
     } finally {
       setIsUploading(false);
       setUploadStatus('');
@@ -164,238 +259,380 @@ export default function AddSneakerModal({
   };
 
   return (
-    <div className="modal-backdrop-overlay" onClick={onClose}>
+    <div className="yzy-modal-overlay" onClick={onClose}>
       <div 
-        className="modal-content-card" 
+        className={`yzy-modal-box ${step === 'camera' ? 'camera-mode' : ''}`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
       >
-        {/* Modal Header */}
-        <div className="modal-header-retro">
-          <div className="modal-header-lights">
-            <span className="mini-dot-led red"></span>
-            <span className="mini-dot-led yellow"></span>
-            <span className="mini-dot-led green"></span>
-          </div>
-          <h3 className="modal-title-pixel">REGISTRAR ZAPATILLA</h3>
-          <button 
-            className="modal-close-btn" 
-            disabled={isUploading}
-            onClick={() => {
-              playPokedexBeep(400, 0.05);
-              onClose();
-            }}
-          >
-            ✕
-          </button>
-        </div>
-
-        {errorMsg && (
-          <div className="modal-error-alert-pixel">
-            ! {errorMsg}
-          </div>
-        )}
-
-        {isUploading && (
-          <div className="modal-uploading-banner">
-            <span className="upload-spinner-pixel">⚡</span>
-            <span>{uploadStatus}</span>
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="modal-form-body">
-          {/* Row 1: Number & Type */}
-          <div className="form-row-duo">
-            <div className="form-group">
-              <label className="pixel-label">N° POKÉDEX</label>
-              <input 
-                type="text"
-                value={number}
-                onChange={(e) => setNumber(e.target.value)}
-                className="pixel-input"
-                placeholder="#007"
-                disabled={isUploading}
-              />
-            </div>
-            <div className="form-group">
-              <label className="pixel-label">TIPO / CATEGORÍA</label>
-              <select 
-                value={type}
-                onChange={(e) => setType(e.target.value)}
-                className="pixel-select"
-                disabled={isUploading}
-              >
-                {SNEAKER_TYPES.map((t) => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Name */}
-          <div className="form-group">
-            <label className="pixel-label">NOMBRE DEL MODELO *</label>
-            <input 
-              type="text"
-              value={name}
-              onChange={(e) => {
-                setName(e.target.value);
-                if (errorMsg) setErrorMsg('');
-              }}
-              placeholder="Ej: AIR JORDAN 4 RETRO BRED"
-              className="pixel-input"
-              required
-              disabled={isUploading}
-            />
-          </div>
-
-          {/* Images Section with Vercel Blob support */}
-          <div className="form-group images-uploader-section">
-            <label className="pixel-label">
-              IMÁGENES ({images.length} AÑADIDAS) → VERCEL BLOB
-            </label>
-            <div className="uploader-help-pixel">
-              Las fotos se alojarán de forma segura en Vercel Blob Storage.
-            </div>
-
-            {/* Buttons to upload file or paste URL */}
-            <div className="upload-actions-bar">
-              <label className={`pixel-file-btn ${isUploading ? 'disabled' : ''}`}>
-                <span>📁 SUBIR FOTOS (CÁMARA / GALERÍA)</span>
-                <input 
-                  type="file" 
-                  multiple 
-                  accept="image/*"
-                  onChange={handleFileUpload}
-                  style={{ display: 'none' }}
-                  disabled={isUploading}
-                />
-              </label>
-            </div>
-
-            {/* Or add via URL */}
-            <div className="url-add-row">
-              <input 
-                type="url"
-                value={imageUrlInput}
-                onChange={(e) => setImageUrlInput(e.target.value)}
-                placeholder="O pega URL de imagen..."
-                className="pixel-input url-input"
-                disabled={isUploading}
-              />
-              <button 
+        {/* =========================================================
+            VIEW 1: CAMERA BY DEFAULT
+            ========================================================= */}
+        {step === 'camera' ? (
+          <div className="yzy-camera-view">
+            {/* Camera Top Bar */}
+            <div className="yzy-camera-top-bar">
+              <button
                 type="button"
-                onClick={handleAddImageUrl}
-                className="pixel-btn-action-small"
-                disabled={isUploading}
+                className="yzy-camera-nav-btn"
+                onClick={onClose}
+                aria-label="Cerrar"
+                title="Cerrar"
               >
-                + URL
+                ✕
+              </button>
+
+              <div className="yzy-camera-counter">
+                {images.length === 0 ? (
+                  <span>ENFOCA LA ZAPATILLA</span>
+                ) : (
+                  <span>{images.length} FOTO{images.length !== 1 ? 'S' : ''} CAPTURADA{images.length !== 1 ? 'S' : ''}</span>
+                )}
+              </div>
+
+              <button
+                type="button"
+                className="yzy-camera-done-btn"
+                onClick={() => setStep('form')}
+              >
+                {images.length > 0 ? 'CONTINUAR →' : 'SALTAR →'}
               </button>
             </div>
 
-            {/* Preview Grid of Uploaded Images */}
-            {images.length > 0 && (
-              <div className="images-preview-strip">
-                {images.map((item, idx) => (
-                  <div key={idx} className="preview-thumb-box">
-                    <img src={item.dataUrl} alt={`Foto ${idx + 1}`} />
-                    {!isUploading && (
-                      <button 
-                        type="button"
-                        className="preview-remove-btn"
-                        onClick={() => handleRemoveImage(idx)}
-                        title="Eliminar foto"
-                      >
-                        ✕
-                      </button>
-                    )}
-                    <span className="preview-idx-badge">{idx + 1}</span>
+            {/* Video Viewfinder */}
+            <div className="yzy-camera-viewfinder">
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className="yzy-camera-video"
+              />
+              <canvas ref={canvasRef} style={{ display: 'none' }} />
+
+              {/* Shutter flash overlay */}
+              {flash && <div className="yzy-camera-flash" />}
+
+              {/* Camera Error / Fallback message if permissions denied */}
+              {cameraError && (
+                <div className="yzy-camera-fallback-msg">
+                  <p>NO SE PUDO ACCEDER A LA CÁMARA</p>
+                  <label className="yzy-camera-fallback-file-btn">
+                    <span>SELECCIONAR FOTO DE GALERÍA</span>
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*"
+                      onChange={(e) => {
+                        handleFileUpload(e);
+                        setStep('form');
+                      }}
+                      style={{ display: 'none' }}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="yzy-button secondary"
+                    onClick={() => setStep('form')}
+                    style={{ marginTop: '8px' }}
+                  >
+                    CONTINUAR SIN CÁMARA
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Camera Bottom Controls: Shutter button is favicon.svg */}
+            <div className="yzy-camera-bottom-bar">
+              {/* Gallery upload shortcut */}
+              <label className="yzy-camera-gallery-shortcut" title="Subir desde galería">
+                <span className="yzy-camera-gallery-icon">📁</span>
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  onChange={handleFileUpload}
+                  style={{ display: 'none' }}
+                />
+              </label>
+
+              {/* SHUTTER BUTTON: Circular button with favicon.svg */}
+              <button
+                type="button"
+                className="yzy-camera-shutter-btn"
+                onClick={handleCapturePhoto}
+                aria-label="Hacer foto"
+                title="Hacer foto"
+              >
+                <img 
+                  src="/favicon.svg" 
+                  alt="Disparar foto" 
+                  className="yzy-shutter-favicon" 
+                />
+              </button>
+
+              {/* Recent thumbnail preview */}
+              <div 
+                className="yzy-camera-thumb-shortcut"
+                onClick={() => setStep('form')}
+                title={images.length > 0 ? "Ver fotos y continuar" : ""}
+              >
+                {images.length > 0 ? (
+                  <div className="yzy-camera-last-thumb">
+                    <img src={images[images.length - 1].dataUrl} alt="Última foto" />
+                    <span className="yzy-camera-thumb-badge">{images.length}</span>
                   </div>
-                ))}
+                ) : (
+                  <div className="yzy-camera-empty-thumb" />
+                )}
               </div>
+            </div>
+          </div>
+        ) : (
+          /* =========================================================
+             VIEW 2: FORM WITH PHOTO REORDERING & PRODUCT DETAILS
+             ========================================================= */
+          <div className="yzy-form-view">
+            <div className="yzy-modal-header">
+              <button
+                type="button"
+                className="yzy-modal-back-to-cam"
+                onClick={() => setStep('camera')}
+                title="Volver a hacer fotos"
+              >
+                ‹ CÁMARA
+              </button>
+              <div className="yzy-modal-title">NUEVA ZAPATILLA</div>
+              <button 
+                type="button"
+                className="yzy-modal-close" 
+                disabled={isUploading}
+                onClick={onClose}
+              >
+                ✕
+              </button>
+            </div>
+
+            {errorMsg && (
+              <div className="yzy-modal-error">{errorMsg}</div>
             )}
-          </div>
 
-          {/* Description (Pixel Art centered flavor text) */}
-          <div className="form-group">
-            <label className="pixel-label">DESCRIPCIÓN DE LA ENTRADA</label>
-            <textarea 
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Historia, detalles, materiales o recuerdos de este par..."
-              className="pixel-textarea"
-              rows={3}
-              disabled={isUploading}
-            />
-          </div>
+            {isUploading && (
+              <div className="yzy-modal-status">{uploadStatus}</div>
+            )}
 
-          {/* Optional Specs */}
-          <div className="form-row-duo">
-            <div className="form-group">
-              <label className="pixel-label">MARCA</label>
-              <input 
-                type="text"
-                value={brand}
-                onChange={(e) => setBrand(e.target.value)}
-                placeholder="Nike, adidas, Jordan..."
-                className="pixel-input"
-                disabled={isUploading}
-              />
-            </div>
-            <div className="form-group">
-              <label className="pixel-label">TALLA</label>
-              <input 
-                type="text"
-                value={size}
-                onChange={(e) => setSize(e.target.value)}
-                placeholder="US 10 / EU 44"
-                className="pixel-input"
-                disabled={isUploading}
-              />
-            </div>
-          </div>
+            <form onSubmit={handleSubmit} className="yzy-modal-form">
+              {/* Photo Reorder & Management Section */}
+              <div className="yzy-form-field">
+                <div className="yzy-photos-header-row">
+                  <label className="yzy-label">
+                    FOTOS ({images.length})
+                  </label>
+                  <span className="yzy-label-hint">
+                    LA FOTO #1 ES LA PORTADA EN LA PANTALLA PRINCIPAL
+                  </span>
+                </div>
 
-          <div className="form-row-duo">
-            <div className="form-group">
-              <label className="pixel-label">COLORWAY</label>
-              <input 
-                type="text"
-                value={colorway}
-                onChange={(e) => setColorway(e.target.value)}
-                placeholder="Black / Cement Grey"
-                className="pixel-input"
-                disabled={isUploading}
-              />
-            </div>
-            <div className="form-group">
-              <label className="pixel-label">ESTADO</label>
-              <select 
-                value={condition}
-                onChange={(e) => setCondition(e.target.value)}
-                className="pixel-select"
+                {/* Thumbnails with Reordering Controls */}
+                {images.length > 0 ? (
+                  <div className="yzy-reorder-grid">
+                    {images.map((item, idx) => (
+                      <div 
+                        key={idx} 
+                        className={`yzy-reorder-card ${idx === 0 ? 'is-cover' : ''}`}
+                      >
+                        <div className="yzy-reorder-img-wrap">
+                          <img src={item.dataUrl} alt={`Foto ${idx + 1}`} />
+                          {idx === 0 && (
+                            <span className="yzy-cover-badge">PORTADA</span>
+                          )}
+                          {!isUploading && (
+                            <button 
+                              type="button"
+                              className="yzy-reorder-remove-btn"
+                              onClick={() => handleRemoveImage(idx)}
+                              title="Eliminar foto"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Reordering actions */}
+                        <div className="yzy-reorder-actions">
+                          <button
+                            type="button"
+                            className="yzy-reorder-arrow-btn"
+                            disabled={idx === 0 || isUploading}
+                            onClick={() => moveImage(idx, idx - 1)}
+                            title="Mover hacia la izquierda"
+                          >
+                            ◀
+                          </button>
+
+                          {idx !== 0 ? (
+                            <button
+                              type="button"
+                              className="yzy-make-cover-btn"
+                              disabled={isUploading}
+                              onClick={() => makeCover(idx)}
+                              title="Poner como foto de portada"
+                            >
+                              PORTADA
+                            </button>
+                          ) : (
+                            <span className="yzy-cover-active-label">#1</span>
+                          )}
+
+                          <button
+                            type="button"
+                            className="yzy-reorder-arrow-btn"
+                            disabled={idx === images.length - 1 || isUploading}
+                            onClick={() => moveImage(idx, idx + 1)}
+                            title="Mover hacia la derecha"
+                          >
+                            ▶
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="yzy-no-photos-box">
+                    <p>NO HAS CAPTURADO NINGUNA FOTO</p>
+                    <button
+                      type="button"
+                      className="yzy-button secondary"
+                      onClick={() => setStep('camera')}
+                    >
+                      📸 ABRIR CÁMARA
+                    </button>
+                  </div>
+                )}
+
+                {/* Additional upload options in form */}
+                <div className="yzy-add-more-photos-row">
+                  <button
+                    type="button"
+                    className="yzy-btn-mini"
+                    onClick={() => setStep('camera')}
+                    disabled={isUploading}
+                  >
+                    📸 HACER MÁS FOTOS
+                  </button>
+                  
+                  <label className={`yzy-btn-mini ${isUploading ? 'disabled' : ''}`}>
+                    <span>📁 AÑADIR DE GALERÍA</span>
+                    <input 
+                      type="file" 
+                      multiple 
+                      accept="image/*"
+                      onChange={handleFileUpload}
+                      style={{ display: 'none' }}
+                      disabled={isUploading}
+                    />
+                  </label>
+                </div>
+
+                <div className="yzy-url-row" style={{ marginTop: '6px' }}>
+                  <input 
+                    type="url"
+                    value={imageUrlInput}
+                    onChange={(e) => setImageUrlInput(e.target.value)}
+                    placeholder="O pegar URL de imagen..."
+                    className="yzy-input"
+                    disabled={isUploading}
+                  />
+                  <button 
+                    type="button"
+                    onClick={handleAddImageUrl}
+                    className="yzy-button secondary"
+                    disabled={isUploading}
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              {/* Sneaker Details */}
+              <div className="yzy-form-field">
+                <label className="yzy-label">NOMBRE DEL MODELO (EJ: YZY PODS)</label>
+                <input 
+                  type="text"
+                  value={name}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    if (errorMsg) setErrorMsg('');
+                  }}
+                  placeholder="NOMBRE"
+                  className="yzy-input"
+                  required
+                  disabled={isUploading}
+                />
+              </div>
+
+              <div className="yzy-form-field">
+                <label className="yzy-label">TIPO / CATEGORÍA</label>
+                <select 
+                  value={type}
+                  onChange={(e) => setType(e.target.value)}
+                  className="yzy-select"
+                  disabled={isUploading}
+                >
+                  {SNEAKER_TYPES.map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="yzy-form-field">
+                <label className="yzy-label">DESCRIPCIÓN</label>
+                <textarea 
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Descripción breve..."
+                  className="yzy-textarea"
+                  rows={2}
+                  disabled={isUploading}
+                />
+              </div>
+
+              <div className="yzy-form-row">
+                <div className="yzy-form-field half">
+                  <label className="yzy-label">MARCA</label>
+                  <input 
+                    type="text"
+                    value={brand}
+                    onChange={(e) => setBrand(e.target.value)}
+                    placeholder="EJ: ADIDAS"
+                    className="yzy-input"
+                    disabled={isUploading}
+                  />
+                </div>
+                <div className="yzy-form-field half">
+                  <label className="yzy-label">TALLA</label>
+                  <input 
+                    type="text"
+                    value={size}
+                    onChange={(e) => setSize(e.target.value)}
+                    placeholder="US 10"
+                    className="yzy-input"
+                    disabled={isUploading}
+                  />
+                </div>
+              </div>
+
+              <button 
+                type="submit" 
+                className="yzy-button primary"
                 disabled={isUploading}
               >
-                <option value="Deadstock (DS)">Deadstock (DS) - A estrenar</option>
-                <option value="VNDS (Near Mint)">VNDS - Como nuevo</option>
-                <option value="Used 9/10">Used 9/10 - Excelente</option>
-                <option value="Used 8/10">Used 8/10 - Buen estado</option>
-                <option value="Beat / Beater">Beater - Uso diario</option>
-              </select>
-            </div>
+                {isUploading ? 'GUARDANDO...' : 'REGISTRAR'}
+              </button>
+            </form>
           </div>
-
-          {/* Submit Button */}
-          <div className="modal-footer-retro">
-            <button 
-              type="submit" 
-              className="pixel-submit-btn"
-              disabled={isUploading}
-            >
-              {isUploading ? '⚡ SINCRONIZANDO CON VERCEL...' : '★ REGISTRAR EN SNEAKDEX ★'}
-            </button>
-          </div>
-        </form>
+        )}
       </div>
     </div>
   );

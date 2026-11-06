@@ -21,6 +21,7 @@ Al desplegar tu proyecto en Vercel o vincular los stores desde la pestaña **Sto
 
 | Variable | Descripción | Dónde se obtiene |
 | :--- | :--- | :--- |
+| `SNEADEX_PASSWORD` | Contraseña para proteger el acceso privado a tu colección y a la subida de fotos. Por defecto: `Ivan$$$13`. | Añádela en Settings > Environment Variables en Vercel (o en tu archivo `.env`). |
 | `BLOB_READ_WRITE_TOKEN` | Token con permisos de lectura y escritura para subir imágenes a Vercel Blob. | En tu proyecto Vercel > **Storage** > **Create Database** > **Blob**. Se inyecta automáticamente al pulsar *Connect to Project*. |
 | `KV_REST_API_URL` | URL de conexión REST para la base de datos KV (Upstash Redis). | En tu proyecto Vercel > **Storage** > **Create Database** > **KV**. Se inyecta automáticamente al conectar. |
 | `KV_REST_API_TOKEN` | Token de autenticación REST para Vercel KV. | En tu proyecto Vercel > **Storage** > **KV** > pestaña *.env*. Se inyecta automáticamente. |

@@ -1,4 +1,5 @@
 import { put } from '@vercel/blob';
+import { verifyAuth } from './auth.js';
 
 // Disable default bodyParser size limit in Next/Vercel serverless if needed
 export const config = {
@@ -14,10 +15,18 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
+  }
+
+  // Security check: Verify backend password/token
+  if (!verifyAuth(req)) {
+    return res.status(401).json({
+      success: false,
+      error: 'Acceso no autorizado. Se requiere contraseña del backend para subir fotos.'
+    });
   }
 
   if (req.method !== 'POST') {
@@ -52,7 +61,7 @@ export default async function handler(req, res) {
     }
 
     // Extract base64 binary
-    const matches = base64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    const matches = base64.match(/^data:([A-Za-z-+]+);base64,(.+)$/);
     const mimeType = matches ? matches[1] : (contentType || 'image/jpeg');
     const base64Data = matches ? matches[2] : base64;
     const buffer = Buffer.from(base64Data, 'base64');

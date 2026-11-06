@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import PokedexShell from './components/PokedexShell';
-import SneakerGrid from './components/SneakerGrid';
-import SneakerDetailModal from './components/SneakerDetailModal';
+import YZYSneakerGrid from './components/YZYSneakerGrid';
+import YZYSneakerDetail from './components/YZYSneakerDetail';
+import AuthGate from './components/AuthGate';
 import AddSneakerModal from './components/AddSneakerModal';
 import EditSneakerModal from './components/EditSneakerModal';
 import { DEFAULT_SNEAKERS } from './data/defaultSneakers';
@@ -9,70 +10,83 @@ import {
   fetchSneakersApi, 
   addSneakerApi, 
   updateSneakerApi, 
-  deleteSneakerApi, 
-  resetSneakersApi 
+  deleteSneakerApi,
+  isAuthenticated
 } from './services/api';
 import './App.css';
 
 export default function App() {
   const [sneakers, setSneakers] = useState(DEFAULT_SNEAKERS);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncError, setSyncError] = useState(null);
-
-  // Active view states
+  const [isAuth, setIsAuth] = useState(() => isAuthenticated());
+  const [isLoading, setIsLoading] = useState(false);
   const [selectedSneaker, setSelectedSneaker] = useState(null);
+
+  // Modal states
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingSneaker, setEditingSneaker] = useState(null);
 
-  // Fetch from Vercel KV via Serverless API on mount
   useEffect(() => {
-    let isMounted = true;
-    async function loadCollection() {
-      try {
-        setIsLoading(true);
-        const data = await fetchSneakersApi();
-        if (isMounted && Array.isArray(data) && data.length > 0) {
+    let isCancelled = false;
+    if (isAuth) {
+      fetchSneakersApi()
+        .then((data) => {
+          if (!isCancelled && Array.isArray(data) && data.length > 0) {
+            setSneakers(data);
+          }
+        })
+        .catch((err) => {
+          if (!isCancelled) {
+            console.error('Error fetching sneakers:', err);
+            if (err.isAuthError || !isAuthenticated()) {
+              setIsAuth(false);
+            }
+          }
+        })
+        .finally(() => {
+          if (!isCancelled) {
+            setIsLoading(false);
+          }
+        });
+    }
+    return () => {
+      isCancelled = true;
+    };
+  }, [isAuth]);
+
+  const handleAuthenticated = () => {
+    setIsLoading(true);
+    setIsAuth(true);
+    fetchSneakersApi()
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
           setSneakers(data);
         }
-      } catch (err) {
-        console.error('Error fetching sneakers from API:', err);
-        if (isMounted) {
-          setSyncError('MODO SIN CONEXIÓN O KV NO DISPONIBLE');
-        }
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      }
-    }
-    loadCollection();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+      })
+      .catch((err) => {
+        console.error('Error after authentication:', err);
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
+  };
 
   // Add new sneaker
   const handleAddSneaker = async (newSneaker) => {
     try {
-      setIsSyncing(true);
-      // Optimistic update
       setSneakers((prev) => [newSneaker, ...prev]);
-      setSelectedSneaker(newSneaker);
-      // Persist to Vercel KV
+      setSelectedSneaker(newSneaker); // focus on newly added sneaker
       await addSneakerApi(newSneaker);
     } catch (err) {
-      console.error('Failed to add sneaker via API:', err);
-      setSyncError('ERROR AL GUARDAR EN VERCEL KV');
-    } finally {
-      setIsSyncing(false);
+      console.error('Failed to add sneaker:', err);
+      if (err.isAuthError) {
+        setIsAuth(false);
+      }
     }
   };
 
   // Update existing sneaker
   const handleUpdateSneaker = async (updatedSneaker) => {
     try {
-      setIsSyncing(true);
       setSneakers((prev) =>
         prev.map((s) => (s.id === updatedSneaker.id ? updatedSneaker : s))
       );
@@ -81,46 +95,29 @@ export default function App() {
       }
       await updateSneakerApi(updatedSneaker);
     } catch (err) {
-      console.error('Failed to update sneaker via API:', err);
-      setSyncError('ERROR AL ACTUALIZAR EN VERCEL KV');
-    } finally {
-      setIsSyncing(false);
+      console.error('Failed to update sneaker:', err);
+      if (err.isAuthError) {
+        setIsAuth(false);
+      }
     }
   };
 
   // Delete sneaker
   const handleDeleteSneaker = async (id) => {
     try {
-      setIsSyncing(true);
       setSneakers((prev) => prev.filter((s) => s.id !== id));
       if (selectedSneaker && selectedSneaker.id === id) {
         setSelectedSneaker(null);
       }
       await deleteSneakerApi(id);
     } catch (err) {
-      console.error('Failed to delete sneaker via API:', err);
-      setSyncError('ERROR AL ELIMINAR EN VERCEL KV');
-    } finally {
-      setIsSyncing(false);
+      console.error('Failed to delete sneaker:', err);
+      if (err.isAuthError) {
+        setIsAuth(false);
+      }
     }
   };
 
-  // Reset collection to starter Pokémon sneakers
-  const handleResetCollection = async () => {
-    try {
-      setIsSyncing(true);
-      const res = await resetSneakersApi();
-      setSneakers(res || DEFAULT_SNEAKERS);
-      setSelectedSneaker(null);
-    } catch (err) {
-      console.error('Failed to reset collection via API:', err);
-      setSneakers(DEFAULT_SNEAKERS);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  // Compute next Pokédex number e.g. #007
   const computeNextNumber = () => {
     const nextNum = sneakers.length + 1;
     return `#${String(nextNum).padStart(3, '0')}`;
@@ -129,29 +126,28 @@ export default function App() {
   return (
     <main className="sneakdex-app-wrapper">
       <PokedexShell
-        onOpenAdd={() => setIsAddModalOpen(true)}
-        onResetCollection={handleResetCollection}
-        totalSneakers={sneakers.length}
-        isSyncing={isSyncing}
+        onOpenAdd={() => {
+          if (!isAuth) return;
+          setIsAddModalOpen(true);
+        }}
       >
-        {isLoading ? (
-          <div className="pokedex-loading-screen">
-            <div className="loading-pokeball-spinner"></div>
-            <p className="loading-pixel-text">CONECTANDO A VERCEL KV...</p>
-            <p className="loading-sub-text">SINCRONIZANDO SNEAKDEX</p>
+        {!isAuth ? (
+          <AuthGate onAuthenticated={handleAuthenticated} />
+        ) : isLoading ? (
+          <div className="yzy-loading-screen">
+            <div className="yzy-loading-indicator">CARGANDO...</div>
           </div>
         ) : selectedSneaker ? (
-          <SneakerDetailModal
+          <YZYSneakerDetail
             sneaker={selectedSneaker}
-            onClose={() => setSelectedSneaker(null)}
+            onBack={() => setSelectedSneaker(null)}
             onEdit={(snk) => setEditingSneaker(snk)}
-            onDelete={handleDeleteSneaker}
+            onDelete={(id) => handleDeleteSneaker(id)}
           />
         ) : (
-          <SneakerGrid
+          <YZYSneakerGrid
             sneakers={sneakers}
             onSelectSneaker={(snk) => setSelectedSneaker(snk)}
-            onOpenAddModal={() => setIsAddModalOpen(true)}
           />
         )}
       </PokedexShell>

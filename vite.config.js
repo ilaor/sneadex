@@ -46,6 +46,10 @@ function vercelApiDevPlugin() {
         }
 
         try {
+          if (pathname === '/api/auth') {
+            const { default: handler } = await import('./api/auth.js');
+            return await handler(req, res);
+          }
           if (pathname === '/api/sneakers') {
             const { default: handler } = await import('./api/sneakers.js');
             return await handler(req, res);
